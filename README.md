@@ -105,6 +105,31 @@ timelapse-system/
    sudo systemctl enable --now monitor.timer monitor-daily.timer
    ```
 
+```ini
+# systemd monitor.service ユニット定義例
+
+[Unit]
+Description=Timelapse System Monitor (hourly)
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/timelapse-system
+ExecStart=/usr/bin/python3 /home/pi/timelapse-system/monitor.py
+EnvironmentFile=/home/pi/timelapse-system/.env
+Restart=on-failure
+
+# 実行間隔の管理（Timer ユニットの例）
+[Unit]
+Description=Run Timelapse System Monitor hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
 ## 使い方
 
 - **単発アラートのテスト**  
