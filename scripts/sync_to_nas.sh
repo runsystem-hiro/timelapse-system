@@ -4,14 +4,22 @@
 #=========================================================
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$(dirname "$SCRIPT_DIR")/.env"
+
+if [ -f "$ENV_FILE" ]; then
+  set -o allexport
+  source "$ENV_FILE"
+  set +o allexport
+fi
+
+NAS_DEST="${NAS_DEST:-rsync://NAS/timelapse}"
 LOCAL_DIR="/home/pi/timelapse-system/archived/"
-NAS_DEST="rsync://NAS/timelapse"
 LOG_FILE="/home/pi/timelapse-system/log/sync_nas.log"
 
 {
   echo "[`date '+%F %T'`] Starting NAS sync..."
 
-  # rsync実行（--timeoutや--contimeoutで停止状態のNASに対しても制御可能）
   if rsync -rtv --progress --omit-dir-times "${LOCAL_DIR}" "${NAS_DEST}"; then
     echo "[`date '+%F %T'`] NAS sync successful."
 
