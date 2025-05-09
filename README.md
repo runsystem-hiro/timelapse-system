@@ -167,4 +167,8 @@ python3 send_report_to_slack.py
 python3 monitor.py --daily --date 2025-05-01
 ```
 
+### 明るさグラフ
+
+![brightness_plot.png](./log/brightness_plot.png "brightness_plot.png")
+
 ---
