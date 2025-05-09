@@ -10,9 +10,9 @@ CSV_PATH = "/home/pi/timelapse-system/log/brightness.csv"
 PLOT_PATH = "/home/pi/timelapse-system/log/brightness_plot.png"
 
 # 明るさの閾値
-TARGET_MIN = 0.18
-TARGET_MAX = 0.25
-TOO_BRIGHT = 0.35
+TARGET_MIN = 0.25
+TARGET_MAX = 0.35
+TOO_BRIGHT = 0.40
 
 # 夜間帯の時間
 NIGHT_START_HOUR = 0

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #=========================================================
-# NAS同期後、50日以上前の画像をローカルから削除（同期成功時のみ）
+# NAS同期後、90日以上前の画像をローカルから削除（同期成功時のみ）
 #=========================================================
 set -euo pipefail
 
@@ -23,8 +23,8 @@ LOG_FILE="/home/pi/timelapse-system/log/sync_nas.log"
   if rsync -rtv --progress --omit-dir-times "${LOCAL_DIR}" "${NAS_DEST}"; then
     echo "[`date '+%F %T'`] NAS sync successful."
 
-    # 同期成功時のみ、50日以上前のjpgを削除
-    find "${LOCAL_DIR}" -type f -name '*.jpg' -mtime +50 -print -delete
+    # 同期成功時のみ、90日以上前のjpgを削除
+    find "${LOCAL_DIR}" -type f -name '*.jpg' -mtime +90 -print -delete
 
     # 空ディレクトリ削除
     find "${LOCAL_DIR}" -type d -empty -delete

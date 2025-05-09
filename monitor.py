@@ -1,48 +1,51 @@
 #!/usr/bin/env python3
 """
-monitor.py — Timelapse‑system Monitoring & Daily Summary (2025‑05‑01 rev‑D)
-
-* 保守互換：旧 6 列 CSV も新 10 列 CSV も自動判定
-* 追加メトリクス：NEW_IMG / IMG_CNT / LOAD1 / MEM_PCT
-* 日次サマリ：画像枚数合計・ログ容量など拡張
+monitor.py — Timelapse‑system Monitoring & Daily Summary (Slack Bot 対応版)
 """
-from __future__ import annotations
 
-import os, sys, csv, json, time, argparse, logging, pathlib, shutil, subprocess, datetime
+import os, sys, csv, time, argparse, logging, pathlib, shutil, subprocess, datetime
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
-import requests, psutil
+import psutil
 from dotenv import load_dotenv
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
-# ─────────────────────────────────────────────
-# 1. 設定読み込み (.env)
-# ─────────────────────────────────────────────
 ROOT = pathlib.Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 
-WEBHOOK_URL   = os.getenv("GAS_WEBHOOK")
-USER_ID       = os.getenv("SLACK_USER_ID")
-DISK_THRESHOLD = float(os.getenv("DISK_THRESHOLD", 80.0))
-TEMP_THRESHOLD = float(os.getenv("TEMP_THRESHOLD", 65.0))
-SUPPRESS_MIN   = int(os.getenv("SUPPRESS_MIN", 30))
-LOAD_THRESHOLD = float(os.getenv("LOAD_THRESHOLD", 2.0))
-MEM_THRESHOLD  = float(os.getenv("MEM_THRESHOLD", 80.0))
+SLACK_BOT_TOKEN  = os.getenv("SLACK_BOT_TOKEN")
+SLACK_DM_EMAIL   = os.getenv("SLACK_DM_EMAIL")
+DISK_THRESHOLD   = float(os.getenv("DISK_THRESHOLD", 80.0))
+TEMP_THRESHOLD   = float(os.getenv("TEMP_THRESHOLD", 65.0))
+SUPPRESS_MIN     = int(os.getenv("SUPPRESS_MIN", 30))
+LOAD_THRESHOLD   = float(os.getenv("LOAD_THRESHOLD", 2.0))
+MEM_THRESHOLD    = float(os.getenv("MEM_THRESHOLD", 80.0))
 
 DISK_PATHS = {
     "images"  : "/home/pi/timelapse-system/images",
     "archived": "/home/pi/timelapse-system/archived",
 }
 PARTITION_ROOT = "/home/pi"
-CSV_PATH      = ROOT / "log" / "system_log.csv"
-SUPPRESS_FILE = ROOT / "log" / "last_alert"
+CSV_PATH       = ROOT / "log" / "system_log.csv"
+SUPPRESS_FILE  = ROOT / "log" / "last_alert"
 
-if not WEBHOOK_URL or not USER_ID:
-    sys.exit("ERROR: GAS_WEBHOOK / SLACK_USER_ID が未設定")
+client = WebClient(token=SLACK_BOT_TOKEN)
 
-# ─────────────────────────────────────────────
-# 2. ロギング
-# ─────────────────────────────────────────────
+def get_dm_channel():
+    user_info = client.users_lookupByEmail(email=SLACK_DM_EMAIL)
+    user_id = user_info["user"]["id"]
+    conv = client.conversations_open(users=user_id)
+    return conv["channel"]["id"]
+
+def send_dm_message(text: str):
+    try:
+        channel_id = get_dm_channel()
+        client.chat_postMessage(channel=channel_id, text=text)
+    except SlackApiError as e:
+        print(f"[Slack Error] {e.response['error']}")
+
 LOG_PATH = ROOT / "log" / "monitor.log"
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
@@ -51,10 +54,6 @@ logging.basicConfig(
     handlers=[logging.FileHandler(LOG_PATH), logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
-
-# ─────────────────────────────────────────────
-# 3. ユーティリティ
-# ─────────────────────────────────────────────
 
 def dir_size_kb(path: str) -> int:
     try:
@@ -77,26 +76,12 @@ class DiskMetric:
     used_kb: int
     pct: float
 
-class SlackNotifier:
-    def __init__(self, url: str, uid: str): self.url, self.uid = url, uid
-    def send(self, text: str):
-        try:
-            requests.post(self.url,json={"user":self.uid,"text":text},timeout=5).raise_for_status()
-        except Exception as e:
-            logger.error("Slack送信エラー: %s", e)
-
 def suppressed() -> bool:
     return SUPPRESS_FILE.exists() and (time.time()-int(SUPPRESS_FILE.read_text()))<SUPPRESS_MIN*60
 
 def mark_alert(): SUPPRESS_FILE.write_text(str(int(time.time())))
 
-notifier = SlackNotifier(WEBHOOK_URL, USER_ID)
-
-# ─────────────────────────────────────────────
-# 4. 監視処理
-# ─────────────────────────────────────────────
-
-def run_monitor(no_slack=False, ignore_suppress=False):
+def run_monitor(no_slack=False, ignore_suppress=False, force_alert=False):
     ts = time.strftime("%Y-%m-%d %H:%M")
     logger.info("監視開始 %s", ts)
 
@@ -109,14 +94,11 @@ def run_monitor(no_slack=False, ignore_suppress=False):
     load1   = os.getloadavg()[0]
     mem_pct = psutil.virtual_memory().percent
 
-    # archived 新規枚数
-    img_cnt = metrics[0].used_kb // 1  # dummy convert, real count below
     img_files = subprocess.check_output(["find", DISK_PATHS["archived"], "-type","f","-name","*.jpg","-printf","%T@\n"],text=True)
     imgs = [float(x) for x in img_files.splitlines()] if img_files else []
     new_img = sum(1 for t_ in imgs if time.time()-t_ < 3600)
     img_cnt = len(imgs)
 
-    # CSV append
     CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
     with CSV_PATH.open("a", newline="") as f:
         csv.writer(f).writerow([
@@ -126,6 +108,9 @@ def run_monitor(no_slack=False, ignore_suppress=False):
         ])
 
     alerts = []
+    if force_alert:
+        alerts.append("🧪 強制テストアラート (--force-alert)")
+
     for m in metrics:
         if m.pct >= DISK_THRESHOLD:
             alerts.append(f"💾 {m.label} {m.pct:.1f}% (≧{DISK_THRESHOLD}%)")
@@ -138,15 +123,11 @@ def run_monitor(no_slack=False, ignore_suppress=False):
 
     if alerts and (ignore_suppress or not suppressed()) and not no_slack:
         host = pathlib.Path("/etc/hostname").read_text().strip()
-        notifier.send(f"🚨 *{host}*\n"+"\n".join(alerts))
+        send_dm_message(f"🚨 *{host}*\n" + "\n".join(alerts))
         mark_alert()
     logger.info("監視終了")
 
-# ─────────────────────────────────────────────
-# 5. 日次サマリ
-# ─────────────────────────────────────────────
-
-def run_daily_summary(date: datetime.date|None=None, no_slack=False):
+def run_daily_summary(date: Optional[datetime.date] = None, no_slack=False):
     if date is None:
         date = datetime.date.today()-datetime.timedelta(days=1)
     dstr = date.strftime("%Y-%m-%d")
@@ -157,12 +138,11 @@ def run_daily_summary(date: datetime.date|None=None, no_slack=False):
     with CSV_PATH.open() as f:
         for r in csv.reader(f):
             if r and r[0].startswith(dstr):
-                rows.append(r+['0']*10)  # 列不足をゼロ補完
+                rows.append(r+['0']*10)
     if not rows:
         logger.warning("対象日データなし %s", dstr)
         return
 
-    # 列インデックス
     idx = lambda n, default=0.0: [float(r[n]) for r in rows if len(r)>n]
 
     img_max = max(idx(3))
@@ -180,12 +160,8 @@ def run_daily_summary(date: datetime.date|None=None, no_slack=False):
              f"📝 log ディレクトリ : {log_kb/1024:.1f} MB"]
 
     if not no_slack:
-        notifier.send("\n".join(lines))
+        send_dm_message("\n".join(lines))
     logger.info("日次サマリ送信完了")
-
-# ─────────────────────────────────────────────
-# 6. CLI
-# ─────────────────────────────────────────────
 
 def parse_args():
     p = argparse.ArgumentParser(description="timelapse-system monitor")
@@ -193,6 +169,7 @@ def parse_args():
     p.add_argument("--no-slack", action="store_true")
     p.add_argument("--daily", action="store_true")
     p.add_argument("--date")
+    p.add_argument("--force-alert", action="store_true")
     return p.parse_args()
 
 def main():
@@ -203,7 +180,7 @@ def main():
             tgt=datetime.datetime.strptime(a.date,"%Y-%m-%d").date()
         run_daily_summary(tgt, a.no_slack)
     else:
-        run_monitor(a.no_slack, a.once)
+        run_monitor(a.no_slack, a.once, a.force_alert)
 
 if __name__=="__main__":
     main()
