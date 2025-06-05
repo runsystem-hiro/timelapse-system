@@ -25,12 +25,66 @@ HTML_PAGE = """
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pi Camera Preview</title>
   <style>
-    body, html { margin:0; padding:0; background:#000; }
-    img { width:100vw; height:auto; display:block; margin:auto; }
+    body, html {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #videoContainer {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #camera {
+      max-width: 100%;
+      max-height: 100%;
+      transform: rotate(0deg);
+      transition: transform 0.3s ease;
+    }
+    #controls {
+      position: fixed;
+      bottom: 10px;
+      background: rgba(0,0,0,0.6);
+      padding: 10px;
+      border-radius: 8px;
+    }
+    .btn {
+      color: white;
+      background: #444;
+      border: none;
+      margin: 0 5px;
+      padding: 8px 12px;
+      font-size: 14px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .btn:hover {
+      background: #666;
+    }
   </style>
 </head>
 <body>
-  <img src="stream.mjpg" />
+  <div id="videoContainer">
+    <img id="camera" src="stream.mjpg" />
+  </div>
+  <div id="controls">
+    <button class="btn" onclick="setRotation(0)">0</button>
+    <button class="btn" onclick="setRotation(90)">90</button>
+    <button class="btn" onclick="setRotation(180)">180</button>
+    <button class="btn" onclick="setRotation(270)">270</button>
+  </div>
+
+  <script>
+    function setRotation(deg) {
+      document.getElementById("camera").style.transform = "rotate(" + deg + "deg)";
+    }
+  </script>
 </body>
 </html>
 """
@@ -90,7 +144,8 @@ def setup_camera():
     config = picam2.create_preview_configuration(
         lores={"size": LORES_RESOLUTION},
         main={"size": MAIN_RESOLUTION},
-        controls={"FrameDurationLimits": (1000000 // FPS, 1000000 // FPS)}
+        controls={
+            "FrameDurationLimits": (1000000 // FPS, 1000000 // FPS)}
     )
     picam2.configure(config)
     return picam2

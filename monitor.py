@@ -12,6 +12,14 @@ from dotenv import load_dotenv
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
+def count_yesterdays_images_from_archived() -> int:
+    archived_dir = "/home/pi/timelapse-system/archived"
+    yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    target_dir = os.path.join(archived_dir, yesterday)
+    if os.path.isdir(target_dir):
+        return len([f for f in os.listdir(target_dir) if f.endswith(".jpg")])
+    return 0
+
 ROOT = pathlib.Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 
@@ -94,10 +102,17 @@ def run_monitor(no_slack=False, ignore_suppress=False, force_alert=False):
     load1   = os.getloadavg()[0]
     mem_pct = psutil.virtual_memory().percent
 
-    img_files = subprocess.check_output(["find", DISK_PATHS["archived"], "-type","f","-name","*.jpg","-printf","%T@\n"],text=True)
-    imgs = [float(x) for x in img_files.splitlines()] if img_files else []
-    new_img = sum(1 for t_ in imgs if time.time()-t_ < 3600)
-    img_cnt = len(imgs)
+
+    def find_recent_images(base_dir: str, since_sec: int) -> list[float]:
+        try:
+            out = subprocess.check_output(["find", base_dir, "-type", "f", "-name", "*.jpg", "-printf", "%T@\n"], text=True)
+            return [float(t) for t in out.splitlines() if time.time() - float(t) < since_sec]
+        except Exception as e:
+            logger.warning("find失敗 %s: %s", base_dir, e)
+            return []
+
+    images_imgs = find_recent_images(DISK_PATHS["images"], 3600)
+    new_img = img_cnt = len(images_imgs)
 
     CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
     with CSV_PATH.open("a", newline="") as f:
@@ -149,7 +164,7 @@ def run_daily_summary(date: Optional[datetime.date] = None, no_slack=False):
     arc_max = max(idx(4))
     temp_avg= sum(idx(5))/len(rows)
     temp_max= max(idx(5))
-    new_total= int(sum(idx(6)))
+    new_total = count_yesterdays_images_from_archived()
 
     log_kb = dir_size_kb(ROOT/"log")
 

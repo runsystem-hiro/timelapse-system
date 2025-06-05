@@ -6,8 +6,8 @@ import numpy as np
 from datetime import datetime, timedelta
 
 # ===== 設定 =====
-CSV_PATH = "/home/pi/timelapse-system/log/brightness.csv"
-PLOT_PATH = "/home/pi/timelapse-system/log/brightness_plot.png"
+LOG_DIR = "/home/pi/timelapse-system/log"
+PLOT_PATH = f"{LOG_DIR}/brightness_plot.png"
 
 # 明るさの閾値
 TARGET_MIN = 0.25
@@ -18,22 +18,41 @@ TOO_BRIGHT = 0.40
 NIGHT_START_HOUR = 0
 NIGHT_END_HOUR = 6
 
-# 描画対象日数（最新7日分のみ表示）
+# 描画対象日数（最新7日分）
 DAYS_TO_KEEP = 7
+cutoff = datetime.now() - timedelta(days=DAYS_TO_KEEP)
 
-# ===== CSV 読み込み =====
-df = pd.read_csv(CSV_PATH, header=None, names=[
-    "timestamp", "mode", "mode_str", "time_info", "shutter", "gain", "path", "mean", "ev"
-])
+# ===== 対象月を2か月分取得 =====
+this_month = datetime.now().strftime("%Y-%m")
+last_month = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+
+csv_files = [
+    f"{LOG_DIR}/brightness_{last_month}.csv",
+    f"{LOG_DIR}/brightness_{this_month}.csv"
+]
+
+# ===== CSV 読み込みと連結 =====
+dfs = []
+for path in csv_files:
+    try:
+        df = pd.read_csv(path, header=None, names=[
+            "timestamp", "mode", "mode_str", "time_info",
+            "shutter", "gain", "path", "mean", "ev"
+        ])
+        dfs.append(df)
+    except FileNotFoundError:
+        continue  # ファイルが存在しない場合はスキップ
+
+if not dfs:
+    raise RuntimeError("CSVファイルが見つかりません。")
+
+df = pd.concat(dfs)
 df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
 df["mean"] = pd.to_numeric(df["mean"], errors="coerce")
 df["ev"] = pd.to_numeric(df["ev"], errors="coerce")
-
-# ===== データフィルタリング（直近N日分のみ） =====
-cutoff = datetime.now() - timedelta(days=DAYS_TO_KEEP)
 df = df[df["timestamp"] >= cutoff]
 
-# AUTO / MANUAL 区別
+# ===== AUTO / MANUAL 区別 =====
 auto_df = df[df["mode_str"] == "auto"]
 manual_df = df[df["mode_str"] == "manual"]
 
@@ -61,7 +80,6 @@ for date in unique_dates:
 
 ax1.set_ylabel("Mean Brightness")
 ax1.set_title(f"Brightness (Last {DAYS_TO_KEEP} Days)")
-ax1.legend()
 ax1.grid(True)
 ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
 plt.setp(ax1.get_xticklabels(), rotation=45)
@@ -77,8 +95,12 @@ ax2.grid(True)
 ax2.legend()
 
 # ===== X軸範囲の設定 =====
-ax1.set_xlim(df["timestamp"].min(), df["timestamp"].max())
+if not df.empty:
+    ax1.set_xlim(df["timestamp"].min(), df["timestamp"].max())
 
+# ===== レイアウト調整と保存 =====
 plt.tight_layout()
+ax1.legend(loc="upper left", bbox_to_anchor=(0.0, 0.45), frameon=True)
+
 plt.savefig(PLOT_PATH)
 print(f"Saved plot to: {PLOT_PATH}")
