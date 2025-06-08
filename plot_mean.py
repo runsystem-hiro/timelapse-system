@@ -24,7 +24,8 @@ cutoff = datetime.now() - timedelta(days=DAYS_TO_KEEP)
 
 # ===== 対象月を2か月分取得 =====
 this_month = datetime.now().strftime("%Y-%m")
-last_month = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+last_month = (datetime.now().replace(day=1) -
+              timedelta(days=1)).strftime("%Y-%m")
 
 csv_files = [
     f"{LOG_DIR}/brightness_{last_month}.csv",
@@ -57,19 +58,25 @@ auto_df = df[df["mode_str"] == "auto"]
 manual_df = df[df["mode_str"] == "manual"]
 
 # ===== プロット作成 =====
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 9), sharex=False, gridspec_kw={"height_ratios": [3, 1]})
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 9),
+                               sharex=False, gridspec_kw={"height_ratios": [3, 1]})
 
 # ===== 上：時系列の明るさ =====
-ax1.axhspan(TARGET_MIN, TARGET_MAX, color="yellow", alpha=0.2, label="Target Range (0.25~0.35)")
-ax1.axhline(TARGET_MIN, color="green", linestyle="--", label="Target Min (0.25)")
-ax1.axhline(TARGET_MAX, color="orange", linestyle="--", label="Target Max (0.35)")
+ax1.axhspan(TARGET_MIN, TARGET_MAX, color="yellow",
+            alpha=0.2, label="Target Range (0.25~0.35)")
+ax1.axhline(TARGET_MIN, color="green",
+            linestyle="--", label="Target Min (0.25)")
+ax1.axhline(TARGET_MAX, color="orange",
+            linestyle="--", label="Target Max (0.35)")
 ax1.axhline(TOO_BRIGHT, color="red", linestyle="--", label="Too Bright (0.40)")
 
 auto_sizes = np.clip((abs(auto_df["ev"].fillna(0)) + 1) * 20, 10, 100)
 manual_sizes = np.full(len(manual_df), 20)
 
-ax1.scatter(auto_df["timestamp"], auto_df["mean"], color="blue", s=auto_sizes, label="Auto Mode")
-ax1.scatter(manual_df["timestamp"], manual_df["mean"], color="green", s=manual_sizes, label="Manual Mode")
+ax1.scatter(auto_df["timestamp"], auto_df["mean"],
+            color="blue", s=auto_sizes, label="Auto Mode")
+ax1.scatter(manual_df["timestamp"], manual_df["mean"],
+            color="green", s=manual_sizes, label="Manual Mode")
 
 # 夜間帯の背景
 unique_dates = df["timestamp"].dt.normalize().unique()
@@ -85,9 +92,12 @@ ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
 plt.setp(ax1.get_xticklabels(), rotation=45)
 
 # ===== 下：ヒストグラム =====
-ax2.hist(df["mean"].dropna(), bins=30, color="purple", alpha=0.7, edgecolor="black")
-ax2.axvline(TARGET_MIN, color="green", linestyle="--", label="Target Min (0.25)")
-ax2.axvline(TARGET_MAX, color="orange", linestyle="--", label="Target Max (0.35)")
+ax2.hist(df["mean"].dropna(), bins=30,
+         color="purple", alpha=0.7, edgecolor="black")
+ax2.axvline(TARGET_MIN, color="green",
+            linestyle="--", label="Target Min (0.25)")
+ax2.axvline(TARGET_MAX, color="orange",
+            linestyle="--", label="Target Max (0.35)")
 ax2.axvline(TOO_BRIGHT, color="red", linestyle="--", label="Too Bright (0.40)")
 ax2.set_xlabel("Mean Brightness")
 ax2.set_ylabel("Frequency")

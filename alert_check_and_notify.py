@@ -6,8 +6,11 @@ from dotenv import load_dotenv
 from slack_notifier import SlackNotifier
 
 # ログ関数
+
+
 def log(msg):
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}")
+
 
 # .env の読み込み
 load_dotenv("/home/pi/timelapse-system/.env")
@@ -19,7 +22,10 @@ ALERT_TIMESTAMP_FILE = "/home/pi/timelapse-system/log/last_alert_time"
 ALERT_COOLDOWN_MINUTES = 30
 
 # Slack通知クラス初期化
+if SLACK_BOT_TOKEN is None:
+    raise ValueError("環境変数 'SLACK_BOT_TOKEN' が未設定です。")
 notifier = SlackNotifier(bot_token=SLACK_BOT_TOKEN, user_email=SLACK_DM_EMAIL)
+
 
 def should_send_alert():
     if not os.path.exists(ALERT_TIMESTAMP_FILE):
@@ -32,9 +38,11 @@ def should_send_alert():
     except Exception:
         return True
 
+
 def update_last_alert_time():
     with open(ALERT_TIMESTAMP_FILE, "w") as f:
         f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
 
 def parse_latest_csv_entry():
     if not os.path.exists(CSV_PATH):
@@ -45,6 +53,7 @@ def parse_latest_csv_entry():
             if len(row) >= 8:
                 return row[0], row[6], row[7]
     return None, None, None
+
 
 def send_brightness_alert(timestamp, mean_str, filepath):
     try:
@@ -70,6 +79,7 @@ def send_brightness_alert(timestamp, mean_str, filepath):
         log("✅ アラート送信完了")
     else:
         log("⚠️ アラート送信失敗")
+
 
 if __name__ == "__main__":
     if not should_send_alert():

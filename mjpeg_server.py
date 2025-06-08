@@ -89,6 +89,7 @@ HTML_PAGE = """
 </html>
 """
 
+
 class StreamingOutput(io.BufferedIOBase):
     def __init__(self):
         self.frame = None
@@ -98,6 +99,7 @@ class StreamingOutput(io.BufferedIOBase):
         with self.condition:
             self.frame = buf
             self.condition.notify_all()
+
 
 class StreamingHandler(server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -112,14 +114,15 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
         content = HTML_PAGE.encode('utf-8')
         self.send_response(200)
         self.send_header('Content-Type', 'text/html')
-        self.send_header('Content-Length', len(content))
+        self.send_header('Content-Length', str(len(content)))
         self.end_headers()
         self.wfile.write(content)
 
     def _stream_mjpeg(self):
         self.send_response(200)
         self.send_header('Cache-Control', 'no-cache, private')
-        self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=FRAME')
+        self.send_header(
+            'Content-Type', 'multipart/x-mixed-replace; boundary=FRAME')
         self.end_headers()
         try:
             while True:
@@ -128,16 +131,21 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
                     frame = output.frame
                 self.wfile.write(b'--FRAME\r\n')
                 self.send_header('Content-Type', 'image/jpeg')
-                self.send_header('Content-Length', len(frame))
+                if frame is None:
+                    continue
+                self.send_header('Content-Length', str(len(frame)))
                 self.end_headers()
                 self.wfile.write(frame)
                 self.wfile.write(b'\r\n')
         except Exception as e:
-            logging.warning('Client disconnected %s: %s', self.client_address, str(e))
+            logging.warning('Client disconnected %s: %s',
+                            self.client_address, str(e))
+
 
 class StreamingServer(socketserver.ThreadingMixIn, server.HTTPServer):
     allow_reuse_address = True
     daemon_threads = True
+
 
 def setup_camera():
     picam2 = Picamera2()
@@ -150,10 +158,13 @@ def setup_camera():
     picam2.configure(config)
     return picam2
 
+
 def start_streaming(picam2):
     global output
     output = StreamingOutput()
-    picam2.start_recording(JpegEncoder(), FileOutput(output), quality=Quality.LOW)
+    picam2.start_recording(
+        JpegEncoder(), FileOutput(output), quality=Quality.LOW)
+
 
 def run_server():
     address = ('', PORT)
@@ -165,6 +176,7 @@ def run_server():
         logging.info("Server shutdown requested.")
     finally:
         server.shutdown()
+
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)

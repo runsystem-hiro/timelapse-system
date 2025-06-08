@@ -7,13 +7,22 @@ from dotenv import load_dotenv
 from slack_notifier import SlackNotifier
 
 # ログ関数
+
+
 def log(msg):
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}")
+
 
 # .envの読み込み
 load_dotenv("/home/pi/timelapse-system/.env")
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 SLACK_DM_EMAIL = os.getenv("SLACK_DM_EMAIL")
+
+if SLACK_BOT_TOKEN is None:
+    raise ValueError("環境変数 'SLACK_BOT_TOKEN' が設定されていません。")
+
+if SLACK_DM_EMAIL is None:
+    raise ValueError("環境変数 'SLACK_DM_EMAIL' が設定されていません。")
 
 CSV_PATH = f"/home/pi/timelapse-system/log/brightness_{datetime.now():%Y-%m}.csv"
 # PLOT_SCRIPT = "/home/pi/timelapse-system/plot_mean.py"
@@ -23,6 +32,7 @@ notifier = SlackNotifier(bot_token=SLACK_BOT_TOKEN, user_email=SLACK_DM_EMAIL)
 
 # def run_plot_script():
 #     subprocess.run(["python3", PLOT_SCRIPT], check=True)
+
 
 def analyze_trend():
     means = []
@@ -47,6 +57,7 @@ def analyze_trend():
     except Exception as e:
         return f"解析失敗: {e}"
 
+
 def get_latest_image_path():
     try:
         with open(CSV_PATH, "r") as f:
@@ -58,6 +69,7 @@ def get_latest_image_path():
     except:
         return None
     return None
+
 
 def send_report():
     log("📤 Slackにタイムラプスレポートを送信中...")
@@ -109,6 +121,7 @@ def send_report():
 
     except Exception as e:
         log(f"[エラー] レポート送信中に例外発生: {e}")
+
 
 if __name__ == "__main__":
     send_report()

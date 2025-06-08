@@ -84,41 +84,53 @@ fi
     batch_num=$((batch_num + 1))
     echo "[$(date '+%F %T')] 📦 Processing batch $batch_num (${BATCH_SIZE} files max)"
 
-    # 最適化したrsyncオプションで転送
-    if rsync -av --no-t --files-from="$batch_file" \
-             --bwlimit="${BWLIMIT}" \
-             --compress \
-             --compress-level=5 \
-             --partial \
-             --timeout=300 \
-             "$LOCAL_DIR/" "$NAS_DEST/" 2>&1; then
+    RSYNC_LOG_FILE="$(mktemp)"
+
+    run_rsync_batch() {
+      rsync -a --no-t --files-from="$batch_file" \
+        --bwlimit="${BWLIMIT}" \
+        --compress --compress-level=5 \
+        --partial --timeout=300 \
+        "$LOCAL_DIR/" "$NAS_DEST/" >"$RSYNC_LOG_FILE" 2>&1
+    }
+
+    if run_rsync_batch; then
       files_count=$(wc -l < "$batch_file")
       echo "[$(date '+%F %T')] ✅ Batch $batch_num successful ($files_count files)"
     else
-      error_code=$?
-      echo "[$(date '+%F %T')] ❌ Batch $batch_num failed with error code: $error_code"
+      rsync_exit_code=$?
+      echo "[$(date '+%F %T')] ❌ Batch $batch_num failed with error code: $rsync_exit_code"
+
+      if grep -q 'rsync error:.*code 23' "$RSYNC_LOG_FILE"; then
+        SUBLOG_DIR="$LOG_DIR/code23"
+        mkdir -p "$SUBLOG_DIR"
+        TIMESTAMP=$(date '+%H%M%S')
+        cp "$RSYNC_LOG_FILE" "$SUBLOG_DIR/batch_${batch_num}_${TIMESTAMP}.log"
+        echo "[$(date '+%F %T')] 📄 Code 23 log saved to $SUBLOG_DIR/batch_${batch_num}_${TIMESTAMP}.log"
+      fi
+
       echo "[$(date '+%F %T')] 🔄 Retrying batch $batch_num after 30s pause..."
       sleep 30
-      if rsync -av --no-t --files-from="$batch_file" \
-               --bwlimit="${BWLIMIT}" \
-               --compress \
-               --compress-level=5 \
-               --partial \
-               --timeout=300 \
-                "$LOCAL_DIR/" "$NAS_DEST/" 2>&1; then
+
+      if run_rsync_batch; then
         files_count=$(wc -l < "$batch_file")
         echo "[$(date '+%F %T')] ✅ Retry successful for batch $batch_num ($files_count files)"
       else
         echo "[$(date '+%F %T')] ❌ Retry failed for batch $batch_num"
+        if grep -q 'rsync error:.*code 23' "$RSYNC_LOG_FILE"; then
+          SUBLOG_DIR="$LOG_DIR/code23"
+          mkdir -p "$SUBLOG_DIR"
+          TIMESTAMP=$(date '+%H%M%S')
+          cp "$RSYNC_LOG_FILE" "$SUBLOG_DIR/batch_${batch_num}_${TIMESTAMP}_retry.log"
+          echo "[$(date '+%F %T')] 📄 Retry Code 23 log saved to $SUBLOG_DIR/batch_${batch_num}_${TIMESTAMP}_retry.log"
+        fi
       fi
     fi
-    
-    # 次のバッチの前に待機
-    echo "[$(date '+%F %T')] 💤 Sleeping for ${SLEEP_SEC}s..."
-    sleep "$SLEEP_SEC"
-  done
 
-  # 一時ディレクトリとファイルを削除
+    rm -f "$RSYNC_LOG_FILE"
+  done  # ←ここでforループを明示的に閉じる
+
+  # 一時ファイル削除（ループ外）
   rm -rf "$batch_dir"
   rm -f "$TMPFILE"
 
