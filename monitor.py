@@ -14,7 +14,8 @@ import shutil
 import subprocess
 import datetime
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, cast
+
 
 import psutil
 from dotenv import load_dotenv
@@ -35,8 +36,8 @@ def count_yesterdays_images_from_archived() -> int:
 ROOT = pathlib.Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 
-SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
-SLACK_DM_EMAIL = os.getenv("SLACK_DM_EMAIL")
+SLACK_BOT_TOKEN = cast(str, os.getenv("SLACK_BOT_TOKEN"))
+SLACK_DM_EMAIL = cast(str, os.getenv("SLACK_DM_EMAIL"))
 DISK_THRESHOLD = float(os.getenv("DISK_THRESHOLD", 80.0))
 TEMP_THRESHOLD = float(os.getenv("TEMP_THRESHOLD", 65.0))
 SUPPRESS_MIN = int(os.getenv("SUPPRESS_MIN", 30))
@@ -51,44 +52,38 @@ PARTITION_ROOT = "/home/pi"
 CSV_PATH = ROOT / "log" / "system_log.csv"
 SUPPRESS_FILE = ROOT / "log" / "last_alert"
 
-if SLACK_BOT_TOKEN is None:
-    raise ValueError("環境変数 'SLACK_BOT_TOKEN' が未設定です。")
+if not SLACK_BOT_TOKEN or not SLACK_DM_EMAIL:
+    raise EnvironmentError("SLACK_BOT_TOKEN または SLACK_DM_EMAIL が未設定です")
+
 
 client = WebClient(token=SLACK_BOT_TOKEN)
 
 
-def get_dm_channel():
-    if SLACK_DM_EMAIL is None:
-        raise ValueError("環境変数 'SLACK_DM_EMAIL' が未設定です。")
+def get_dm_channel() -> str:
+    try:
+        user_info = client.users_lookupByEmail(email=SLACK_DM_EMAIL)
+        user = user_info.get("user")
+        if not user or "id" not in user:
+            raise ValueError("SlackユーザーIDが取得できませんでした")
+        user_id = user["id"]
 
-    user_info = client.users_lookupByEmail(email=SLACK_DM_EMAIL)
-    if not isinstance(user_info, dict):
-        raise ValueError("ユーザー情報が取得できませんでした（レスポンスがdictでない）")
+        conv = client.conversations_open(users=user_id)
+        channel = conv.get("channel")
+        if not channel or "id" not in channel:
+            raise ValueError("SlackチャンネルIDが取得できませんでした")
 
-    user = user_info.get("user")
-    if not isinstance(user, dict) or "id" not in user:
-        raise ValueError("ユーザー情報に 'id' が含まれていません")
+        return channel["id"]
 
-    user_id = user["id"]
-
-    conv = client.conversations_open(users=user_id)
-    if not isinstance(conv, dict):
-        raise ValueError("チャンネル情報の取得に失敗しました")
-
-    channel = conv.get("channel")
-    if not isinstance(channel, dict) or "id" not in channel:
-        raise ValueError("チャネルIDが取得できませんでした")
-
-    return channel["id"]
+    except SlackApiError as e:
+        raise RuntimeError(f"Slack API エラー: {e.response['error']}") from e
 
 
 def send_dm_message(text: str):
     try:
         channel_id = get_dm_channel()
         client.chat_postMessage(channel=channel_id, text=text)
-    except SlackApiError as e:
-        error_message = getattr(e.response, 'error', '不明なエラー')
-        print(f"[Slack Error] {error_message}")
+    except Exception as e:
+        print(f"[Slack送信エラー] {e}")
 
 
 LOG_PATH = ROOT / "log" / "monitor.log"
